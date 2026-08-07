@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Environment and credentials
+.env
+.env.*
+!.env.example
+
+# Raw and processed business data
+data/raw/*
+!data/raw/.gitkeep
+
+data/processed/*
+!data/processed/.gitkeep
+
+# Generated audit reports
+reports/auditoria/*
+!reports/auditoria/.gitkeep
+
+reports/auditoria_calidad/*
+!reports/auditoria_calidad/.gitkeep
+
+# Databases and logs
+*.db
+*.sqlite
+*.log
+
+# OS / Editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Excel temporary files
+~$*.xlsx
