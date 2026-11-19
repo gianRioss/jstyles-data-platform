@@ -152,7 +152,39 @@ def transform_ventas(df: pd.DataFrame) -> pd.DataFrame:
             df["fecha"],
             errors="coerce",
             dayfirst=True,
+
         )
+
+    # -----------------------------------------------------
+    # NORMALIZAR HORA
+    # -----------------------------------------------------
+
+    if "hora" in df.columns:
+        hora_parseada = pd.to_datetime(
+            df["hora"].astype("string"),
+            format="mixed",
+            errors="coerce",
+        )
+
+        df["hora"] = (
+            hora_parseada
+            .dt.strftime("%H:%M:%S")
+            .astype("string")
+        )
+
+        if df["hora"].isna().any():
+            tickets_hora_invalida = (
+                df.loc[
+                    df["hora"].isna(),
+                    "ticket_id",
+                ]
+                .tolist()
+            )
+
+            raise ValueError(
+                "Existen ventas con hora inválida: "
+                f"{tickets_hora_invalida}"
+            )
 
     # -----------------------------------------------------
     # 4. CORRECCIÓN HISTÓRICA DOCUMENTADA
@@ -532,7 +564,7 @@ def transform_barberos(df: pd.DataFrame) -> pd.DataFrame:
         raise ValueError(
             f"Se encontraron {duplicated} barbero_id duplicados."
         )
-        
+
         # -----------------------------------------------------
     # CORRECCIÓN DOCUMENTADA DE CONFIGURACIÓN ACTUAL
     # -----------------------------------------------------
@@ -554,7 +586,7 @@ def transform_barberos(df: pd.DataFrame) -> pd.DataFrame:
     df.loc[
         mask_tino,
         "esquema",
-    ] = "60/40"    
+    ] = "60/40"
 
     # -----------------------------------------------------
     # 7. ORDEN FINAL
@@ -2010,7 +2042,7 @@ def transform_gastos(
         df[final_columns]
         .reset_index(drop=True)
     )
-    
+
 # =========================================================
 # IDENTIFICADORES DE VENTAS DE PRODUCTOS
 # =========================================================
@@ -2538,22 +2570,22 @@ def transform_data(
 
         elif sheet == "Clientes":
             clean_df = transform_clientes(df)
-        
+
         elif sheet == "gastos":
-            clean_df = transform_gastos(df)    
+            clean_df = transform_gastos(df)
 
         elif sheet == "catalogo_servicios":
             clean_df = transform_catalogo_servicios(df)
-        
+
         elif sheet == "tarifas_servicios":
             clean_df = transform_generic(df)
 
         elif sheet == "productos_ventas":
             clean_df = transform_productos_ventas(df)
-            
+
         elif sheet == "compras_mayorista":
             clean_df = transform_compras_mayorista(df)
-        
+
         elif sheet == "inventario_productos":
             clean_df = transform_inventario_productos(df)
 
@@ -2607,7 +2639,7 @@ def transform_data(
     print(
         "[OK] Integridad ventas -> servicios validada."
     )
-    
+
     # -----------------------------------------------------
     # 5. TRANSFORMAR TARIFAS DE SERVICIOS
     # -----------------------------------------------------
@@ -2650,11 +2682,11 @@ def transform_data(
         transformed["productos_ventas"],
         transformed["catalogo_productos"],
     )
-    
+
     transformed["productos_ventas"] = (
         add_venta_producto_id(
         transformed["productos_ventas"] )
-    
+
     )
 
     print(
@@ -2670,7 +2702,7 @@ def transform_data(
         transformed["compras_mayorista"],
         transformed["catalogo_productos"],
     )
-    
+
     transformed["compras_mayorista"] = (
     add_compra_id(
         transformed["compras_mayorista"])
@@ -2694,7 +2726,7 @@ def transform_data(
         "[OK] Integridad inventario_productos -> "
         "catalogo_productos validada."
     )
-    
+
     transformed["gastos"] = add_gasto_id(
         transformed["gastos"]
     )
@@ -2702,7 +2734,7 @@ def transform_data(
     print(
     "[OK] Identificadores de gastos validados."
     )
-    
+
         # -----------------------------------------------------
     # CONFIGURACIONES DE COMISIONES
     # -----------------------------------------------------
@@ -2717,7 +2749,7 @@ def transform_data(
         "[OK] Configuraciones de comisiones "
         "de barberos construidas."
     )
-    
+
     print()
     print(
         f"Transformación completada: "

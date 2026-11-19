@@ -282,7 +282,7 @@ def save_processed_data():
         f"| {len(gastos.columns)} columnas"
     )
     
-        # =====================================================
+    # =====================================================
     # COMISIONES DE BARBEROS
     # =====================================================
 
@@ -306,7 +306,6 @@ def save_processed_data():
         f"| {len(comisiones_barberos)} filas "
         f"| {len(comisiones_barberos.columns)} columnas"
     )
-    
 
     # =====================================================
     # FIN
