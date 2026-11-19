@@ -39,3 +39,5 @@ Thumbs.db
 
 # Excel temporary files
 ~$*.xlsx
+reports/data_quality/*
+!reports/data_quality/.gitkeep
