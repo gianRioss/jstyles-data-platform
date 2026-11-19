@@ -1,8 +1,8 @@
 # JStyles Data Platform
 
-Proyecto end-to-end de **Data Engineering, Analytics y evolución hacia Machine Learning e Inteligencia Artificial**, construido sobre datos reales de la barbería JStyles.
+Proyecto end-to-end de **Data Engineering, Analytics y evolución hacia Machine Learning e Inteligencia Artificial**, construido sobre datos operativos reales de la barbería JStyles.
 
-El objetivo es transformar una operación inicialmente administrada mediante Google Sheets/Excel en una plataforma de datos reproducible, auditable y preparada para crecer hacia PostgreSQL, Power BI, APIs, Machine Learning y agentes de IA.
+El objetivo es transformar una operación inicialmente administrada mediante Google Sheets/Excel en una plataforma de datos **reproducible, auditable, incremental y preparada para crecer** hacia PostgreSQL, Power BI, APIs, Machine Learning y agentes de IA.
 
 ---
 
@@ -14,17 +14,18 @@ Construir una plataforma que permita:
 - Normalizar clientes, barberos, servicios y productos.
 - Preservar tarifas y reglas de comisión históricas.
 - Controlar compras, inventario y gastos.
-- Calcular resultados del negocio con reglas reproducibles.
-- Detectar problemas de calidad de datos antes de cargar información.
-- Cargar datos estructurados en PostgreSQL.
+- Calcular resultados del negocio mediante reglas reproducibles.
+- Detectar problemas de calidad antes de cargar información.
+- Ejecutar cargas incrementales e idempotentes en PostgreSQL.
+- Auditar cada ejecución del pipeline.
 - Preparar modelos analíticos para Power BI.
-- Incorporar posteriormente API, Machine Learning y agentes de IA.
+- Incorporar posteriormente APIs, Machine Learning y agentes de IA.
 
 ---
 
 # Arquitectura actual
 
-La versión actual del proyecto implementa:
+La versión actual implementa un pipeline end-to-end:
 
 ```text
 Google Sheets / Excel
@@ -33,18 +34,24 @@ Google Sheets / Excel
         ↓
     Transform
         ↓
- Validaciones
+ Data Quality Gate
         ↓
-      Save
+ Save processed CSVs
         ↓
- CSV procesados
+ PostgreSQL UPSERT
         ↓
-   PostgreSQL
+   Run Audit
 ```
 
-Actualmente PostgreSQL está diseñado mediante un esquema relacional inicial.
+El flujo principal puede ejecutarse desde un único comando:
 
-La evolución prevista será:
+```powershell
+python src/etl/pipeline.py
+```
+
+Actualmente PostgreSQL utiliza un esquema relacional inicial denominado `jstyles`.
+
+La evolución arquitectónica prevista es:
 
 ```text
 Google Sheets
@@ -70,13 +77,13 @@ Las capas `raw`, `staging`, `core` y `marts` forman parte del roadmap y todavía
 
 # Fuente de datos
 
-El origen del proyecto es el archivo operativo:
+El origen principal del proyecto es:
 
 ```text
 data/raw/JStyles_OPERATIVO.xlsx
 ```
 
-El archivo real no se versiona en GitHub.
+El archivo operativo real no se versiona en GitHub.
 
 ## Hojas utilizadas por el ETL
 
@@ -97,29 +104,30 @@ El archivo real no se versiona en GitHub.
 - `productos para comprar`
 - `servicios`
 
-Estas hojas se conservan en la fuente original pero no forman parte del modelo analítico actual.
+Estas hojas se conservan en la fuente original, pero no forman parte del modelo analítico actual.
 
 ---
 
 # Reglas principales del negocio
 
-El ETL incorpora reglas reales de JStyles.
+El ETL implementa reglas reales de funcionamiento de JStyles.
 
-### Servicios
+## Servicios
 
 - La propina pertenece 100 % al barbero.
 - Los descuentos reducen la base del servicio antes del cálculo de comisión.
 - Las tarifas se modelan mediante períodos de vigencia.
-- Las ventas históricas conservan el valor realmente registrado.
+- Las ventas históricas conservan el valor registrado originalmente.
+- Los servicios mantienen una identidad estable aunque su precio cambie.
 
-### Productos
+## Productos
 
-- La comisión por venta de productos corresponde al 10 % del total cuando el vendedor es un barbero.
+- La comisión por venta de productos corresponde al 10 % cuando el vendedor es un barbero.
 - Las ventas realizadas por el propietario o encargado no generan comisión para un barbero.
 - La utilidad del producto se conserva independientemente del valor bruto vendido.
 - Compras, ventas e inventario se relacionan mediante `producto_id`.
 
-### Gastos
+## Gastos
 
 Los gastos se clasifican en:
 
@@ -134,72 +142,128 @@ Solo los gastos comerciales afectan el resultado operativo del local.
 
 # ETL
 
-El ETL principal se encuentra en:
+Los módulos principales se encuentran en:
 
 ```text
 src/etl/
 ```
 
-Actualmente incluye:
+La estructura actual incluye:
 
 ```text
 extract.py
 transform.py
+quality.py
 save.py
 load.py
+load_incremental.py
+run_logger.py
+pipeline.py
 ```
+
+---
 
 ## Extract
 
-`extract.py` lee las hojas operativas del Excel y genera DataFrames para su procesamiento.
+`extract.py` lee las hojas operativas del workbook y genera DataFrames para su procesamiento.
+
+En el snapshot actualmente utilizado se extraen:
+
+```text
+9 hojas
+3333 filas raw
+```
+
+---
 
 ## Transform
 
-`transform.py`:
+`transform.py` se encarga de:
 
-- elimina filas vacías o auxiliares;
-- normaliza nombres de columnas;
-- convierte fechas y horas;
-- estandariza tipos de datos;
-- normaliza nombres de clientes, servicios, barberos y productos;
-- identifica transacciones reales;
-- corrige anomalías históricas documentadas;
-- crea claves técnicas y relaciones;
-- valida integridad referencial;
-- genera catálogos maestros;
-- preserva información histórica.
+- eliminar filas vacías o auxiliares;
+- normalizar nombres de columnas;
+- convertir fechas y horas;
+- estandarizar tipos de datos;
+- normalizar clientes, servicios, barberos y productos;
+- identificar transacciones reales;
+- corregir anomalías históricas cuando existe evidencia;
+- crear claves técnicas;
+- construir relaciones entre entidades;
+- validar integridad referencial;
+- generar catálogos maestros;
+- preservar información histórica;
+- construir configuraciones históricas de comisiones.
 
-## Save
-
-`save.py` genera los datasets procesados en:
-
-```text
-data/processed/
-```
-
-## Load
-
-`load.py` prepara los datasets y los carga en PostgreSQL mediante SQLAlchemy.
-
-La versión actual utiliza una estrategia de **full refresh**:
+La transformación actual genera:
 
 ```text
-TRUNCATE
-    ↓
-carga completa
+11 tablas
+2102 filas transformadas
 ```
 
-La carga se ejecuta dentro de una única transacción.
+---
 
-Si una tabla falla, PostgreSQL revierte la operación completa para evitar estados parciales.
+# Data Quality
 
-La evolución hacia `UPSERT`, incrementalidad e idempotencia completa forma parte del próximo bloque del proyecto.
+`quality.py` implementa un Data Quality Gate posterior a la transformación.
+
+Se validan, entre otros aspectos:
+
+- Primary Keys nulas.
+- Primary Keys duplicadas.
+- Foreign Keys.
+- Ventas relacionadas con barberos.
+- Ventas relacionadas con clientes.
+- Ventas relacionadas con servicios.
+- Tarifas relacionadas con servicios.
+- Ventas de productos relacionadas con productos.
+- Compras relacionadas con productos.
+- Inventario relacionado con productos.
+- Configuraciones de comisión relacionadas con barberos.
+- Precios no negativos.
+- Totales no negativos.
+- Propinas no negativas.
+- Comisiones no negativas.
+- Descuentos entre 0 y 1.
+- Rangos de vigencia de tarifas.
+- Cantidades de productos.
+- Costos de compras.
+- Tipos de gastos.
+- Porcentajes de comisión.
+- Suma de porcentajes barbero + local.
+- Existencia de una única configuración actual por barbero.
+
+Una ejecución real actualmente produce:
+
+```text
+PASS = 35
+WARN = 3
+FAIL = 0
+```
+
+Los warnings corresponden a anomalías conocidas que se conservan para revisión:
+
+```text
+1 fecha inválida histórica en ventas de productos
+6 productos pendientes de revisión
+2 conflictos de precio detectados en inventario
+```
+
+Si aparece al menos un control crítico con estado `FAIL`, el pipeline se detiene antes de cargar PostgreSQL.
+
+Los problemas de datos no se eliminan silenciosamente: se corrigen cuando existe evidencia suficiente o se conservan identificados para revisión.
 
 ---
 
 # Datasets procesados
 
-Actualmente el pipeline genera 11 datasets:
+`save.py` genera 11 datasets en:
+
+```text
+data/processed/
+```
+
+Archivos actuales:
 
 ```text
 ventas.csv
@@ -215,6 +279,13 @@ gastos.csv
 comisiones_barberos.csv
 ```
 
+En la última ejecución validada:
+
+```text
+2102 filas transformadas
+2102 filas guardadas
+```
+
 ---
 
 # Modelo de entidades
@@ -227,7 +298,9 @@ Clave principal:
 barbero_id
 ```
 
-Incluye configuración actual, estado y condición de propietario.
+Incluye información de configuración actual, estado y condición de propietario.
+
+---
 
 ## Clientes
 
@@ -237,7 +310,9 @@ Clave principal:
 cliente_id
 ```
 
-Los clientes históricos que no fueron registrados individualmente no se inventan ni se asignan artificialmente.
+Los clientes históricos que nunca fueron registrados individualmente no se inventan ni se asignan artificialmente.
+
+---
 
 ## Servicios
 
@@ -250,7 +325,7 @@ corte
 corte_new
 corte_new1
 corte_promo
-        ↓
+      ↓
 SER-001
 ```
 
@@ -258,11 +333,13 @@ Esto permite separar:
 
 ```text
 identidad del servicio
-≠
+        ≠
 precio histórico
 ```
 
-## Tarifas de servicios
+---
+
+# Tarifas de servicios
 
 Las tarifas incluyen:
 
@@ -275,19 +352,19 @@ fecha_hasta
 vigente
 ```
 
-Esto preserva cambios de precio a lo largo del tiempo.
+Esto permite preservar cambios de precio sin modificar ventas históricas.
 
 ---
 
 # Comisiones históricas
 
-Las comisiones de los barberos se modelan mediante una tabla independiente:
+Las configuraciones de comisión se almacenan en:
 
 ```text
 comisiones_barberos
 ```
 
-Incluye:
+Incluyen:
 
 ```text
 comision_config_id
@@ -310,7 +387,7 @@ Esto permite distinguir entre:
 - vigencia contractual conocida;
 - vigencia desconocida.
 
-El enfoque utiliza principios de **historización temporal**, relacionados con patrones de Slowly Changing Dimensions.
+El diseño utiliza principios de **historización temporal**, relacionados con patrones de Slowly Changing Dimensions.
 
 No se inventan fechas de vigencia cuando no existe evidencia suficiente.
 
@@ -334,13 +411,19 @@ ventas
 
 se consolidan mediante `producto_id`.
 
+Actualmente el catálogo contiene:
+
+```text
+146 productos
+```
+
 Los productos que no pueden relacionarse con seguridad se mantienen y se marcan para revisión en lugar de eliminarlos o fusionarlos arbitrariamente.
 
 ---
 
 # Claves transaccionales
 
-El proyecto ya utiliza identificadores propios para las principales operaciones:
+Las principales operaciones utilizan identificadores propios:
 
 ```text
 ticket_id
@@ -349,55 +432,27 @@ compra_id
 gasto_id
 ```
 
-Esto permite preparar las tablas para integridad de datos y futuras cargas incrementales.
+Los identificadores derivados son determinísticos cuando corresponde.
 
----
+Esto permite:
 
-# Calidad de datos
-
-El pipeline valida, entre otras cosas:
-
-- tickets duplicados;
-- IDs duplicados;
-- relaciones barbero → venta;
-- relaciones cliente → venta;
-- relaciones servicio → venta;
-- relaciones producto → venta;
-- relaciones producto → compra;
-- relaciones producto → inventario;
-- cantidades válidas;
-- porcentajes de comisión;
-- fechas inválidas;
-- rangos de tarifas;
-- consistencia entre comisión del barbero y comisión del local.
-
-La filosofía del proyecto es:
-
-```text
-Fuente
-   ↓
-Validación
-   ↓
-Transformación
-   ↓
-Validación
-   ↓
-PostgreSQL
-```
-
-Los problemas de datos no se eliminan silenciosamente: se corrigen cuando existe evidencia o se conservan como anomalías identificadas.
+- identificar transacciones;
+- evitar duplicados;
+- mantener estabilidad entre ejecuciones;
+- implementar cargas incrementales;
+- ejecutar UPSERT sobre PostgreSQL.
 
 ---
 
 # PostgreSQL
 
-El esquema inicial se encuentra en:
+La definición relacional inicial se encuentra en:
 
 ```text
 sql/schema.sql
 ```
 
-Actualmente incluye las tablas:
+Actualmente el esquema `jstyles` contiene:
 
 ```text
 barberos
@@ -415,13 +470,232 @@ comisiones_barberos
 
 El modelo incorpora:
 
-- Primary Keys;
-- Foreign Keys;
-- `CHECK constraints`;
-- restricciones de porcentaje;
-- restricciones de fechas;
-- índices para consultas frecuentes;
-- unicidad de configuraciones actuales de comisión.
+- Primary Keys.
+- Foreign Keys.
+- `CHECK constraints`.
+- Restricciones de porcentajes.
+- Restricciones de fechas.
+- Índices.
+- Unicidad de configuraciones actuales de comisión.
+
+---
+
+# Carga incremental PostgreSQL
+
+La carga utilizada actualmente por el pipeline se encuentra en:
+
+```text
+src/etl/load_incremental.py
+```
+
+Implementa:
+
+```text
+INSERT ... ON CONFLICT DO UPDATE
+```
+
+Comportamiento:
+
+```text
+PK nueva
+   ↓
+INSERT
+
+PK existente
+   ↓
+UPDATE
+
+misma ejecución repetida
+   ↓
+sin duplicar la PK
+```
+
+La carga incremental:
+
+- no ejecuta `TRUNCATE`;
+- inserta registros nuevos;
+- actualiza registros ya existentes;
+- utiliza las Primary Keys reales de PostgreSQL;
+- se ejecuta dentro de una transacción;
+- respeta el orden de dependencias entre tablas.
+
+`load.py` permanece como módulo base para conexión, preparación de datasets y soporte de la implementación inicial de carga completa.
+
+El flujo productivo actual utiliza `load_incremental.py`.
+
+---
+
+# Idempotencia e incrementalidad
+
+La estrategia incremental fue validada tanto a nivel de transformación como directamente sobre PostgreSQL.
+
+## Estabilidad del ETL
+
+Existe una prueba automática que agrega operaciones simuladas posteriores al snapshot original y valida que:
+
+- los registros históricos permanezcan;
+- los IDs históricos no cambien;
+- nuevos registros aparezcan una sola vez;
+- no se generen duplicados;
+- tarifas históricas permanezcan estables;
+- configuraciones de comisión permanezcan estables;
+- una segunda ejecución genere exactamente los mismos identificadores.
+
+Archivo:
+
+```text
+tests/test_incremental_stability.py
+```
+
+---
+
+## UPSERT real en PostgreSQL
+
+También existe una prueba contra PostgreSQL real:
+
+```text
+tests/test_load_incremental.py
+```
+
+La prueba:
+
+1. inserta una fila sintética con una PK nueva;
+2. vuelve a enviar la misma PK con valores modificados;
+3. valida que PostgreSQL actualice el registro;
+4. confirma que siga existiendo una única fila;
+5. ejecuta `ROLLBACK`;
+6. comprueba que la base real quede intacta.
+
+Por lo tanto se encuentran validados:
+
+```text
+INSERT por PK nueva
+UPDATE por PK existente
+ausencia de duplicados por PK
+ROLLBACK
+idempotencia del snapshot actual
+```
+
+---
+
+# Auditoría del pipeline
+
+Cada ejecución del pipeline genera un identificador único:
+
+```text
+run_id
+```
+
+El módulo responsable es:
+
+```text
+src/etl/run_logger.py
+```
+
+Los registros se almacenan en formato JSONL en:
+
+```text
+reports/pipeline_runs/pipeline_runs.jsonl
+```
+
+El archivo generado no se versiona en GitHub.
+
+Cada ejecución registra:
+
+```text
+run_id
+pipeline
+started_at
+finished_at
+duration_seconds
+status
+
+rows_extracted
+rows_transformed
+rows_saved
+rows_loaded_db
+
+quality_pass
+quality_warn
+quality_fail
+
+error_type
+error_message
+```
+
+Esto permite conocer el estado y las métricas alcanzadas incluso si el pipeline falla a mitad de ejecución.
+
+---
+
+# Última ejecución validada
+
+Una ejecución end-to-end real produjo:
+
+```text
+Filas extraídas:             3333
+Filas transformadas:         2102
+Filas guardadas CSV:         2102
+Filas procesadas PostgreSQL: 2102
+
+Quality Gate:
+PASS = 35
+WARN = 3
+FAIL = 0
+
+Status:
+SUCCESS
+```
+
+La carga PostgreSQL conserva:
+
+```text
+barberos:               13
+clientes:                6
+comisiones_barberos:    14
+compras_productos:     145
+gastos:                  5
+inventario_productos:  140
+productos:             146
+servicios:              12
+tarifas_servicios:      12
+ventas_productos:      583
+ventas_servicios:     1026
+```
+
+Total:
+
+```text
+2102 filas
+```
+
+---
+
+# Tests automatizados
+
+La suite actual se ejecuta mediante:
+
+```powershell
+python -m pytest -v
+```
+
+Estado validado:
+
+```text
+8 passed
+```
+
+La suite cubre:
+
+```text
+tests/test_incremental_stability.py
+tests/test_load_incremental.py
+tests/test_quality.py
+tests/test_run_logger.py
+```
+
+Actualmente existen dos `FutureWarning` de pandas asociados al helper utilizado por `test_incremental_stability.py`.
+
+Los warnings no representan fallos funcionales del pipeline.
 
 ---
 
@@ -453,49 +727,11 @@ pip install -r requirements.txt
 
 ---
 
-# Auditoría inicial
+# Variables de entorno
 
-Ejecutar:
+PostgreSQL utiliza variables definidas localmente.
 
-```powershell
-python src/audit_workbook.py
-```
-
-Los resultados de auditoría se generan en:
-
-```text
-reports/auditoria/
-```
-
----
-
-# Ejecutar transformación
-
-```powershell
-python src/etl/transform.py
-```
-
----
-
-# Generar datasets procesados
-
-```powershell
-python src/etl/save.py
-```
-
-Los archivos resultantes se generan en:
-
-```text
-data/processed/
-```
-
----
-
-# PostgreSQL
-
-La conexión utiliza variables de entorno.
-
-Ejemplo de configuración:
+Ejemplo:
 
 ```text
 DB_HOST=
@@ -506,19 +742,102 @@ DB_PASSWORD=
 DB_SCHEMA=
 ```
 
-Las credenciales reales no deben almacenarse en GitHub.
-
-La estructura de tablas está definida en:
+Puede utilizarse:
 
 ```text
-sql/schema.sql
+.env.example
 ```
 
-La carga se ejecuta mediante:
+como referencia.
+
+Las credenciales reales del archivo `.env` no deben almacenarse en GitHub.
+
+---
+
+# Ejecución
+
+## Pipeline completo
+
+La forma recomendada de ejecutar el proyecto es:
 
 ```powershell
-python src/etl/load.py
+python src/etl/pipeline.py
 ```
+
+Esto ejecuta:
+
+```text
+Extract
+   ↓
+Transform
+   ↓
+Data Quality
+   ↓
+Save CSV
+   ↓
+PostgreSQL UPSERT
+   ↓
+Run Audit
+```
+
+---
+
+## Solo extracción / transformación
+
+```powershell
+python src/etl/transform.py
+```
+
+---
+
+## Solo generación de datasets procesados
+
+```powershell
+python src/etl/save.py
+```
+
+---
+
+## Solo carga incremental PostgreSQL
+
+```powershell
+python src/etl/load_incremental.py
+```
+
+---
+
+## Tests
+
+```powershell
+python -m pytest -v
+```
+
+---
+
+# Auditoría del workbook original
+
+También se mantienen herramientas separadas para analizar la fuente original.
+
+Auditoría estructural:
+
+```powershell
+python src/audit_workbook.py
+```
+
+Auditoría de calidad sobre datos raw:
+
+```powershell
+python src/audit_quality.py
+```
+
+Los resultados se almacenan en:
+
+```text
+reports/auditoria/
+reports/auditoria_calidad/
+```
+
+Estas auditorías son independientes del Data Quality Gate posterior a la transformación.
 
 ---
 
@@ -532,53 +851,80 @@ python src/etl/load.py
 - Catálogo estable de servicios.
 - Historial de tarifas.
 - Catálogo maestro de productos.
-- Relaciones mediante claves técnicas.
+- Claves técnicas estables.
 - Limpieza de ventas de servicios.
 - Limpieza de ventas de productos.
 - Limpieza de compras.
 - Limpieza de inventario.
 - Clasificación de gastos.
 - Historización de configuraciones de comisión.
-- Validaciones de integridad.
+- Validaciones de integridad referencial.
 - Generación de 11 datasets procesados.
-- Esquema relacional inicial de PostgreSQL.
+- Data Quality Gate automatizado.
+- 35 controles de calidad aprobados en el snapshot actual.
+- Manejo explícito de warnings de calidad.
+- Esquema relacional PostgreSQL.
 - Loader PostgreSQL mediante SQLAlchemy.
-- Carga completa dentro de una transacción.
+- Carga incremental mediante UPSERT.
+- Eliminación de `TRUNCATE` del flujo incremental.
+- Idempotencia del snapshot actual.
+- Prueba de estabilidad con nuevas operaciones simuladas.
+- Test de INSERT y UPDATE real en PostgreSQL.
+- Rollback automático del test de integración.
+- Pipeline end-to-end ejecutable desde un único comando.
+- Auditoría de ejecuciones mediante `run_id`.
+- Métricas de extracción, transformación, guardado y carga PostgreSQL.
+- Registro de errores.
+- Suite automatizada con 8 tests.
 
-## En desarrollo
+---
 
-- Pruebas automáticas de calidad.
-- Prueba formal de idempotencia.
-- Prueba con nuevos registros posteriores al snapshot inicial.
-- Cargas incrementales.
-- Estrategia `UPSERT`.
-- Auditoría de ejecuciones del pipeline.
-- Arquitectura PostgreSQL por capas.
+## Próximo bloque
 
-## Roadmap
+La siguiente evolución arquitectónica será separar PostgreSQL en capas:
 
 ```text
-ETL actual
-    ↓
-Pruebas de calidad
-    ↓
-Idempotencia + incrementalidad
-    ↓
-PostgreSQL
+raw
+ ↓
+staging
+ ↓
+core
+ ↓
+marts
+```
+
+El esquema `jstyles` actual funciona como primer modelo relacional cercano a una capa `core`, pero todavía no se ha realizado la separación física completa.
+
+---
+
+# Roadmap
+
+```text
+ETL end-to-end
+      ✅
+Data Quality
+      ✅
+Idempotencia
+      ✅
+UPSERT incremental
+      ✅
+Auditoría de ejecuciones
+      ✅
+PostgreSQL por capas
 raw → staging → core → marts
-    ↓
+      ↓
 Modelo dimensional
-    ↓
+      ↓
 Power BI
-    ↓
+      ↓
 FastAPI
-    ↓
+      ↓
 Machine Learning
-    ↓
+      ↓
 AI Agent
-    ↓
+      ↓
 Docker
-    ↓
+      ↓
 CI/CD
 ```
 
@@ -586,7 +932,7 @@ CI/CD
 
 # Analytics
 
-La futura capa analítica incluirá modelos orientados a:
+La futura capa analítica estará orientada a métricas como:
 
 - facturación;
 - ganancia neta;
@@ -601,7 +947,45 @@ La futura capa analítica incluirá modelos orientados a:
 - clientes recurrentes;
 - clientes inactivos.
 
-Power BI consumirá principalmente modelos analíticos y marts, no tablas operativas sin modelar.
+Power BI consumirá principalmente modelos analíticos y marts en lugar de tablas operativas sin modelar.
+
+---
+
+# Modelo dimensional futuro
+
+La capa analítica contempla un modelo similar a:
+
+```text
+fact_ventas
+dim_fecha
+dim_cliente
+dim_barbero
+dim_servicio
+dim_producto
+```
+
+Esto permitirá desacoplar las consultas analíticas del modelo operacional.
+
+---
+
+# FastAPI
+
+Una futura API permitirá exponer datos y servicios de la plataforma desde PostgreSQL.
+
+Entre los posibles endpoints:
+
+```text
+ventas
+clientes
+barberos
+servicios
+productos
+inventario
+resultados
+predicciones
+```
+
+La API se incorporará después de consolidar las capas analíticas y el modelo PostgreSQL.
 
 ---
 
@@ -609,13 +993,13 @@ Power BI consumirá principalmente modelos analíticos y marts, no tablas operat
 
 Machine Learning se incorporará únicamente cuando exista una pregunta de negocio respaldada por suficientes datos.
 
-Un posible caso es:
+Uno de los posibles casos es:
 
 ```text
 predicción de churn / abandono de clientes
 ```
 
-Algunas features futuras:
+Features potenciales:
 
 ```text
 dias_desde_ultima_visita
@@ -627,11 +1011,13 @@ barbero_frecuente
 descuentos_utilizados
 ```
 
+No se implementará un modelo únicamente para agregar tecnología al proyecto: deberá responder a una necesidad real del negocio.
+
 ---
 
 # Agente de IA
 
-La evolución final contempla un agente que utilice herramientas y datos reales.
+La evolución final contempla un agente capaz de utilizar herramientas y datos reales.
 
 Ejemplos:
 
@@ -655,13 +1041,14 @@ No se utilizará un chatbot que invente valores.
 
 # Escalabilidad futura
 
-La arquitectura actual está diseñada deliberadamente con tecnologías adecuadas para el volumen real de JStyles:
+La arquitectura actual utiliza tecnologías adecuadas al volumen real del negocio:
 
 ```text
-Python + PostgreSQL
+Python
+PostgreSQL
 ```
 
-Una futura versión experimental podrá estudiar cómo escalar la plataforma si JStyles tuviera múltiples sucursales y millones de operaciones utilizando tecnologías como:
+Una futura versión experimental podría estudiar cómo escalar la plataforma ante múltiples sucursales o millones de operaciones mediante tecnologías como:
 
 ```text
 Databricks
@@ -675,7 +1062,7 @@ Estas tecnologías corresponden a una posible V2 y no forman parte de la impleme
 
 ---
 
-# Principio del proyecto
+# Principios del proyecto
 
 JStyles Data Platform busca demostrar cómo evolucionar datos operativos reales hacia una plataforma profesional:
 
@@ -695,4 +1082,16 @@ Machine Learning
 AI Engineering
 ```
 
-El proyecto prioriza reproducibilidad, trazabilidad, calidad de datos y decisiones técnicas justificadas por encima de agregar tecnologías sin necesidad.
+El proyecto prioriza:
+
+- reproducibilidad;
+- trazabilidad;
+- calidad de datos;
+- idempotencia;
+- integridad referencial;
+- reglas de negocio documentadas;
+- decisiones técnicas justificadas;
+- pruebas automatizadas;
+- evolución incremental de la arquitectura.
+
+El objetivo no es agregar tecnologías sin necesidad, sino construir una solución que pueda crecer manteniendo consistencia, auditabilidad y valor real para el negocio.
