@@ -1,4 +1,5 @@
 from extract import extract_data
+from load_incremental import load_incremental_data
 from quality import (
     run_quality_checks,
     save_quality_report,
@@ -34,7 +35,11 @@ def run_pipeline():
         ↓
     Data Quality
         ↓
-    Save
+    Save processed CSVs
+        ↓
+    PostgreSQL UPSERT
+        ↓
+    Run Audit
 
     Cada ejecución queda auditada mediante
     un run_id y métricas del proceso.
@@ -43,6 +48,20 @@ def run_pipeline():
     run = create_run_record(
         pipeline_name="jstyles_etl"
     )
+
+    # Métrica adicional de PostgreSQL.
+    # La agregamos al registro sin modificar
+    # todavía run_logger.py.
+    run["rows_loaded_db"] = 0
+
+    rows_extracted = 0
+    rows_transformed = 0
+    rows_saved = 0
+    rows_loaded_db = 0
+
+    quality_pass = 0
+    quality_warn = 0
+    quality_fail = 0
 
     print()
     print("=" * 60)
@@ -128,7 +147,7 @@ def run_pipeline():
             )
 
         # =================================================
-        # 4. SAVE
+        # 4. SAVE PROCESSED CSVs
         # =================================================
 
         rows_saved = save_transformed_data(
@@ -136,7 +155,19 @@ def run_pipeline():
         )
 
         # =================================================
-        # 5. SUCCESS
+        # 5. POSTGRESQL UPSERT
+        # =================================================
+
+        rows_loaded_db = (
+            load_incremental_data()
+        )
+
+        run["rows_loaded_db"] = (
+            rows_loaded_db
+        )
+
+        # =================================================
+        # 6. SUCCESS
         # =================================================
 
         finish_run(
@@ -156,35 +187,68 @@ def run_pipeline():
 
         print()
         print("=" * 60)
-        print("PIPELINE COMPLETADO CORRECTAMENTE")
+        print(
+            "PIPELINE COMPLETADO CORRECTAMENTE"
+        )
         print("=" * 60)
+
         print(
             f"Filas extraídas: "
             f"{rows_extracted}"
         )
+
         print(
             f"Filas transformadas: "
             f"{rows_transformed}"
         )
+
         print(
-            f"Filas guardadas: "
+            f"Filas guardadas CSV: "
             f"{rows_saved}"
         )
+
+        print(
+            f"Filas procesadas PostgreSQL: "
+            f"{rows_loaded_db}"
+        )
+
+        print(
+            f"Quality Gate: "
+            f"PASS={quality_pass} | "
+            f"WARN={quality_warn} | "
+            f"FAIL={quality_fail}"
+        )
+
         print(
             f"Duración: "
             f"{run['duration_seconds']} segundos"
         )
+
         print(
             f"Auditoría: {output_file}"
         )
+
         print()
 
         return run
 
     except Exception as error:
+        # Conservamos las métricas alcanzadas
+        # hasta el punto exacto del fallo.
+
+        run["rows_loaded_db"] = (
+            rows_loaded_db
+        )
+
         finish_run(
             run,
             "FAILED",
+            rows_extracted=rows_extracted,
+            rows_transformed=rows_transformed,
+            rows_saved=rows_saved,
+            quality_pass=quality_pass,
+            quality_warn=quality_warn,
+            quality_fail=quality_fail,
             error=error,
         )
 
@@ -196,15 +260,19 @@ def run_pipeline():
         print("=" * 60)
         print("PIPELINE FALLIDO")
         print("=" * 60)
+
         print(
             f"Tipo: {run['error_type']}"
         )
+
         print(
             f"Error: {run['error_message']}"
         )
+
         print(
             f"Auditoría: {output_file}"
         )
+
         print()
 
         raise
