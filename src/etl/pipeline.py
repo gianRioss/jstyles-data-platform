@@ -49,11 +49,9 @@ def run_pipeline():
         pipeline_name="jstyles_etl"
     )
 
-    # Métrica adicional de PostgreSQL.
-    # La agregamos al registro sin modificar
-    # todavía run_logger.py.
-    run["rows_loaded_db"] = 0
-
+    # Inicializamos métricas para poder
+    # conservar el progreso incluso si
+    # el pipeline falla a mitad de ejecución.
     rows_extracted = 0
     rows_transformed = 0
     rows_saved = 0
@@ -162,10 +160,6 @@ def run_pipeline():
             load_incremental_data()
         )
 
-        run["rows_loaded_db"] = (
-            rows_loaded_db
-        )
-
         # =================================================
         # 6. SUCCESS
         # =================================================
@@ -176,6 +170,7 @@ def run_pipeline():
             rows_extracted=rows_extracted,
             rows_transformed=rows_transformed,
             rows_saved=rows_saved,
+            rows_loaded_db=rows_loaded_db,
             quality_pass=quality_pass,
             quality_warn=quality_warn,
             quality_fail=quality_fail,
@@ -236,16 +231,13 @@ def run_pipeline():
         # Conservamos las métricas alcanzadas
         # hasta el punto exacto del fallo.
 
-        run["rows_loaded_db"] = (
-            rows_loaded_db
-        )
-
         finish_run(
             run,
             "FAILED",
             rows_extracted=rows_extracted,
             rows_transformed=rows_transformed,
             rows_saved=rows_saved,
+            rows_loaded_db=rows_loaded_db,
             quality_pass=quality_pass,
             quality_warn=quality_warn,
             quality_fail=quality_fail,

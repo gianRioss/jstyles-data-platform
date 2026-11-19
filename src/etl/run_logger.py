@@ -61,6 +61,7 @@ def create_run_record(
         "rows_extracted": 0,
         "rows_transformed": 0,
         "rows_saved": 0,
+        "rows_loaded_db": 0,
 
         "quality_pass": 0,
         "quality_warn": 0,
@@ -78,6 +79,7 @@ def finish_run(
     rows_extracted=None,
     rows_transformed=None,
     rows_saved=None,
+    rows_loaded_db=None,
     quality_pass=None,
     quality_warn=None,
     quality_fail=None,
@@ -114,6 +116,7 @@ def finish_run(
         "rows_extracted": rows_extracted,
         "rows_transformed": rows_transformed,
         "rows_saved": rows_saved,
+        "rows_loaded_db": rows_loaded_db,
         "quality_pass": quality_pass,
         "quality_warn": quality_warn,
         "quality_fail": quality_fail,
