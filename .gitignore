@@ -41,3 +41,6 @@ Thumbs.db
 ~$*.xlsx
 reports/data_quality/*
 !reports/data_quality/.gitkeep
+
+reports/pipeline_runs/*
+!reports/pipeline_runs/.gitkeep

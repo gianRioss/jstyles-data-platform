@@ -17,13 +17,13 @@ PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 # SAVE
 # =========================================================
 
-def save_processed_data():
+def save_transformed_data(transformed_data):
     """
-    Ejecuta Extract + Transform y guarda las tablas
-    procesadas y validadas hasta el momento.
+    Guarda datasets que ya fueron transformados.
+
+    No vuelve a ejecutar Extract ni Transform.
     """
 
-    # Crear data/processed si no existe
     PROCESSED_DIR.mkdir(
         parents=True,
         exist_ok=True,
@@ -33,26 +33,12 @@ def save_processed_data():
     print("Generando datasets procesados...")
     print()
 
-    # -----------------------------------------------------
-    # 1. EXTRAER
-    # -----------------------------------------------------
-
-    raw_data = extract_data()
-
-    # -----------------------------------------------------
-    # 2. TRANSFORMAR
-    # -----------------------------------------------------
-
-    transformed_data = transform_data(raw_data)
-
     # =====================================================
     # VENTAS DE SERVICIOS
     # =====================================================
 
     ventas = transformed_data["ventas"].copy()
 
-    # Esta columna pertenece al modelo histórico de Sheets
-    # y no la necesitamos en el dataset procesado.
     if "cliente_ocasional_legacy" in ventas.columns:
         ventas = ventas.drop(
             columns=["cliente_ocasional_legacy"]
@@ -260,7 +246,7 @@ def save_processed_data():
         f"| {len(inventario_productos)} filas "
         f"| {len(inventario_productos.columns)} columnas"
     )
-    
+
     # =====================================================
     # GASTOS
     # =====================================================
@@ -281,7 +267,7 @@ def save_processed_data():
         f"| {len(gastos)} filas "
         f"| {len(gastos.columns)} columnas"
     )
-    
+
     # =====================================================
     # COMISIONES DE BARBEROS
     # =====================================================
@@ -314,6 +300,37 @@ def save_processed_data():
     print()
     print(
         f"Archivos generados en: {PROCESSED_DIR}"
+    )
+
+    rows_saved = sum(
+        len(dataframe)
+        for dataframe in transformed_data.values()
+    )
+
+    return rows_saved
+
+
+# =========================================================
+# FLUJO STANDALONE
+# =========================================================
+
+def save_processed_data():
+    """
+    Ejecuta:
+    Extract -> Transform -> Save.
+
+    Se mantiene para poder ejecutar save.py
+    directamente desde PowerShell.
+    """
+
+    raw_data = extract_data()
+
+    transformed_data = transform_data(
+        raw_data
+    )
+
+    return save_transformed_data(
+        transformed_data
     )
 
 
