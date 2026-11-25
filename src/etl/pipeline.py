@@ -1,4 +1,6 @@
+
 from extract import extract_data
+from ingest_raw import ingest_raw_data
 from load_incremental import load_incremental_data
 from quality import (
     run_quality_checks,
@@ -13,6 +15,10 @@ from save import save_transformed_data
 from transform import transform_data
 
 
+# =========================================================
+# FUNCIONES AUXILIARES
+# =========================================================
+
 def count_rows(data):
     """
     Suma las filas de todas las tablas
@@ -25,11 +31,17 @@ def count_rows(data):
     )
 
 
+# =========================================================
+# PIPELINE PRINCIPAL
+# =========================================================
+
 def run_pipeline():
     """
     Ejecuta el pipeline principal:
 
     Extract
+        ↓
+    RAW Ingestion
         ↓
     Transform
         ↓
@@ -42,21 +54,27 @@ def run_pipeline():
     Run Audit
 
     Cada ejecución queda auditada mediante
-    un run_id y métricas del proceso.
+    un run_id compartido y métricas del proceso.
     """
 
     run = create_run_record(
         pipeline_name="jstyles_etl"
     )
 
-    # Inicializamos métricas para poder
-    # conservar el progreso incluso si
-    # el pipeline falla a mitad de ejecución.
+    # Metricas de extraccion
     rows_extracted = 0
+
+    # Metricas de ingestion RAW
+    snapshot_id = None
+    snapshot_created = None
+    rows_inserted_raw = 0
+
+    # Metricas de transformacion y carga
     rows_transformed = 0
     rows_saved = 0
     rows_loaded_db = 0
 
+    # Metricas de calidad
     quality_pass = 0
     quality_warn = 0
     quality_fail = 0
@@ -69,6 +87,7 @@ def run_pipeline():
     print()
 
     try:
+
         # =================================================
         # 1. EXTRACT
         # =================================================
@@ -80,7 +99,28 @@ def run_pipeline():
         )
 
         # =================================================
-        # 2. TRANSFORM
+        # 2. RAW INGESTION
+        # =================================================
+
+        raw_result = ingest_raw_data(
+            raw_data,
+            run_id=run["run_id"],
+        )
+
+        snapshot_id = raw_result[
+            "snapshot_id"
+        ]
+
+        snapshot_created = raw_result[
+            "snapshot_created"
+        ]
+
+        rows_inserted_raw = raw_result[
+            "rows_inserted"
+        ]
+
+        # =================================================
+        # 3. TRANSFORM
         # =================================================
 
         transformed_data = transform_data(
@@ -92,15 +132,11 @@ def run_pipeline():
         )
 
         # =================================================
-        # 3. DATA QUALITY
+        # 4. DATA QUALITY
         # =================================================
 
         quality_report = run_quality_checks(
             transformed_data
-        )
-
-        save_quality_report(
-            quality_report
         )
 
         quality_pass = int(
@@ -121,6 +157,10 @@ def run_pipeline():
             .sum()
         )
 
+        save_quality_report(
+            quality_report
+        )
+
         print()
         print(
             "Quality Gate: "
@@ -130,6 +170,7 @@ def run_pipeline():
         )
 
         if quality_fail > 0:
+
             failures = quality_report.loc[
                 quality_report[
                     "status"
@@ -145,7 +186,7 @@ def run_pipeline():
             )
 
         # =================================================
-        # 4. SAVE PROCESSED CSVs
+        # 5. SAVE PROCESSED CSVs
         # =================================================
 
         rows_saved = save_transformed_data(
@@ -153,7 +194,7 @@ def run_pipeline():
         )
 
         # =================================================
-        # 5. POSTGRESQL UPSERT
+        # 6. POSTGRESQL UPSERT
         # =================================================
 
         rows_loaded_db = (
@@ -161,13 +202,16 @@ def run_pipeline():
         )
 
         # =================================================
-        # 6. SUCCESS
+        # 7. SUCCESS
         # =================================================
 
         finish_run(
             run,
             "SUCCESS",
             rows_extracted=rows_extracted,
+            snapshot_id=snapshot_id,
+            snapshot_created=snapshot_created,
+            rows_inserted_raw=rows_inserted_raw,
             rows_transformed=rows_transformed,
             rows_saved=rows_saved,
             rows_loaded_db=rows_loaded_db,
@@ -188,8 +232,25 @@ def run_pipeline():
         print("=" * 60)
 
         print(
+            f"Run ID: {run['run_id']}"
+        )
+
+        print(
+            f"Snapshot ID: {snapshot_id}"
+        )
+
+        print(
+            f"Snapshot nuevo: {snapshot_created}"
+        )
+
+        print(
             f"Filas extraídas: "
             f"{rows_extracted}"
+        )
+
+        print(
+            f"Filas RAW insertadas: "
+            f"{rows_inserted_raw}"
         )
 
         print(
@@ -228,13 +289,17 @@ def run_pipeline():
         return run
 
     except Exception as error:
-        # Conservamos las métricas alcanzadas
-        # hasta el punto exacto del fallo.
+
+        # Conservamos las metricas alcanzadas
+        # hasta el momento del fallo.
 
         finish_run(
             run,
             "FAILED",
             rows_extracted=rows_extracted,
+            snapshot_id=snapshot_id,
+            snapshot_created=snapshot_created,
+            rows_inserted_raw=rows_inserted_raw,
             rows_transformed=rows_transformed,
             rows_saved=rows_saved,
             rows_loaded_db=rows_loaded_db,
@@ -254,6 +319,14 @@ def run_pipeline():
         print("=" * 60)
 
         print(
+            f"Run ID: {run['run_id']}"
+        )
+
+        print(
+            f"Snapshot ID: {snapshot_id}"
+        )
+
+        print(
             f"Tipo: {run['error_type']}"
         )
 
@@ -269,6 +342,10 @@ def run_pipeline():
 
         raise
 
+
+# =========================================================
+# EJECUCION
+# =========================================================
 
 if __name__ == "__main__":
     run_pipeline()
